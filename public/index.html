@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Battle Arena</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ======================= MAIN MENU ======================= -->
+  <section id="screen-menu" class="screen active">
+    <div class="menu-bg-grid"></div>
+    <div class="menu-orbs">
+      <span class="menu-orb"></span><span class="menu-orb"></span><span class="menu-orb"></span>
+      <span class="menu-orb"></span><span class="menu-orb"></span><span class="menu-orb"></span>
+    </div>
+    <div class="menu-panel">
+      <h1 class="game-title">BATTLE<span>ARENA</span></h1>
+      <p class="tagline">Last one standing wins the round.</p>
+      <div id="menu-stats" class="menu-stats"></div>
+
+      <div class="field-row">
+        <label for="input-name">Callsign</label>
+        <input id="input-name" type="text" maxlength="16" placeholder="Enter your name" autocomplete="off">
+      </div>
+
+      <div class="field-row">
+        <label>Color</label>
+        <div id="color-swatches" class="color-swatches"></div>
+      </div>
+
+      <div class="menu-buttons">
+        <button id="btn-quickplay" class="btn btn-primary">▶ Quick Play</button>
+        <button id="btn-multiplayer" class="btn btn-secondary">🌐 Multiplayer</button>
+        <button id="btn-armory" class="btn btn-secondary">🛒 Armory</button>
+        <button id="btn-instructions" class="btn btn-ghost">❔ Instructions</button>
+        <button id="btn-settings" class="btn btn-ghost">⚙ Settings</button>
+      </div>
+      <p class="menu-footer">v1.0 · Node + Socket.IO + Canvas</p>
+    </div>
+  </section>
+
+  <!-- ======================= MULTIPLAYER PANEL ======================= -->
+  <section id="screen-multiplayer" class="screen">
+    <div class="menu-panel">
+      <h2 class="panel-title">Multiplayer</h2>
+
+      <button id="btn-create-room" class="btn btn-primary full">Create Room</button>
+
+      <div class="divider"><span>or</span></div>
+
+      <div class="field-row">
+        <label for="input-code">Room Code</label>
+        <input id="input-code" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase">
+      </div>
+      <button id="btn-join-room" class="btn btn-secondary full">Join Room</button>
+
+      <p id="mp-error" class="error-text"></p>
+
+      <button id="btn-mp-back" class="btn btn-ghost full">← Back</button>
+    </div>
+  </section>
+
+  <!-- ======================= ARMORY ======================= -->
+  <section id="screen-armory" class="screen">
+    <div class="menu-panel armory-panel">
+      <h2 class="panel-title">Armory</h2>
+      <div class="armory-credits">
+        <span class="armory-credits-label">Credits</span>
+        <span id="armory-credits-value">0</span>
+      </div>
+      <p class="armory-hint">Win rounds to earn credits — spend them on weapons and permanent upgrades.</p>
+
+      <h3 class="armory-section-title">Weapons</h3>
+      <div id="armory-weapons" class="armory-grid"></div>
+
+      <h3 class="armory-section-title">Upgrades</h3>
+      <div id="armory-upgrades" class="armory-list"></div>
+
+      <button id="btn-armory-back" class="btn btn-ghost full">← Back</button>
+    </div>
+  </section>
+
+  <!-- ======================= LOBBY ======================= -->
+  <section id="screen-lobby" class="screen">
+    <div class="menu-panel lobby-panel">
+      <h2 class="panel-title">Lobby</h2>
+      <div class="room-code-display">
+        Room Code: <span id="lobby-room-code">----</span>
+        <button id="btn-copy-code" class="btn-icon" title="Copy code">⧉</button>
+      </div>
+      <div class="lobby-count"><span id="lobby-count">0</span>/<span id="lobby-max">8</span> players</div>
+
+      <ul id="lobby-player-list" class="player-list"></ul>
+
+      <div id="bot-controls" class="bot-controls hidden">
+        <span class="bot-controls-label">Fill empty slots:</span>
+        <button id="btn-add-bot" class="btn-icon">+ Bot</button>
+        <button id="btn-remove-bot" class="btn-icon">− Bot</button>
+      </div>
+
+      <div class="lobby-actions">
+        <button id="btn-ready" class="btn btn-secondary">Ready Up</button>
+        <button id="btn-start-game" class="btn btn-primary" disabled>Start Game</button>
+      </div>
+      <p class="lobby-hint" id="lobby-hint">Waiting for host to start…</p>
+      <button id="btn-lobby-leave" class="btn btn-ghost full">← Leave Room</button>
+    </div>
+  </section>
+
+  <!-- ======================= GAME SCREEN ======================= -->
+  <section id="screen-game" class="screen">
+    <div id="game-container">
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- Countdown overlay -->
+      <div id="countdown-overlay" class="overlay-center hidden">
+        <div id="countdown-number">3</div>
+        <div id="countdown-label">Round <span id="countdown-round">1</span></div>
+      </div>
+
+      <!-- Hit flash vignette -->
+      <div id="hit-flash"></div>
+      <div id="kill-flash"></div>
+      <div id="low-health-vignette"></div>
+
+      <!-- Killstreak announcer -->
+      <div id="announcer" class="announcer hidden"></div>
+
+      <!-- HUD -->
+      <div id="hud">
+        <div class="hud-top-left">
+          <div class="health-bar-wrap">
+            <div class="health-bar-bg"><div id="health-bar-fill" class="health-bar-fill"></div></div>
+            <span id="health-text">100</span>
+          </div>
+          <div id="powerup-status" class="powerup-status"></div>
+          <div id="hud-weapon" class="hud-weapon"></div>
+        </div>
+
+        <div class="hud-top-center">
+          <div id="round-timer">03:00</div>
+          <div id="round-label">Round 1</div>
+        </div>
+
+        <div class="hud-top-right">
+          <div class="hud-stat">Score: <span id="hud-score">0</span></div>
+          <div class="hud-stat">Alive: <span id="hud-alive">0</span>/<span id="hud-total">0</span></div>
+        </div>
+
+        <div id="leaderboard" class="leaderboard">
+          <div class="leaderboard-title">Leaderboard</div>
+          <ol id="leaderboard-list"></ol>
+        </div>
+
+        <div id="kill-feed" class="kill-feed"></div>
+
+        <canvas id="minimap" class="minimap" width="170" height="96"></canvas>
+      </div>
+
+      <!-- Mobile controls -->
+      <div id="mobile-controls" class="mobile-only">
+        <div id="joystick-zone" class="joystick-zone">
+          <div id="joystick-base" class="joystick-base">
+            <div id="joystick-stick" class="joystick-stick"></div>
+          </div>
+        </div>
+        <div id="aim-zone" class="aim-zone"></div>
+        <button id="btn-melee-mobile" class="attack-btn melee-btn">👊</button>
+        <button id="btn-attack-mobile" class="attack-btn">⚔</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= END SCREEN ======================= -->
+  <section id="screen-end" class="screen">
+    <div class="menu-panel end-panel">
+      <h2 class="panel-title">Round Over</h2>
+      <div class="winner-banner">
+        <div class="winner-label">Winner</div>
+        <div id="winner-name" class="winner-name">—</div>
+      </div>
+      <ol id="end-rankings" class="rankings-list"></ol>
+      <div class="lobby-actions">
+        <button id="btn-play-again" class="btn btn-primary">Play Again</button>
+        <button id="btn-return-lobby" class="btn btn-secondary">Return to Lobby</button>
+      </div>
+      <p id="end-hint" class="lobby-hint"></p>
+    </div>
+  </section>
+
+</div>
+
+<!-- ======================= MODALS ======================= -->
+<div id="modal-instructions" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>How to Play</h2>
+    <h3>Objective</h3>
+    <p>Fight other players in the arena. Land hits to deal damage, avoid being hit, and score the most points before the round timer runs out.</p>
+    <h3>Controls — Desktop</h3>
+    <ul>
+      <li><b>WASD / Arrow Keys</b> — move</li>
+      <li><b>Mouse</b> — aim</li>
+      <li><b>Left Click</b> — ranged attack</li>
+      <li><b>Right Click / Space</b> — melee strike (short range, hits harder)</li>
+    </ul>
+    <h3>Controls — Mobile</h3>
+    <ul>
+      <li><b>Left joystick</b> — move</li>
+      <li><b>Right side drag</b> — aim</li>
+      <li><b>⚔ button</b> — ranged attack</li>
+      <li><b>👊 button</b> — melee strike</li>
+    </ul>
+    <h3>Power-ups</h3>
+    <ul>
+      <li><b style="color:#3ef2ff">Speed Boost</b> — move faster for a short time</li>
+      <li><b style="color:#3dff88">Health Restore</b> — instantly heal</li>
+      <li><b style="color:#ffd93d">Shield</b> — reduce incoming damage</li>
+      <li><b style="color:#ff6df0">Rapid Attack</b> — fire much faster</li>
+      <li><b style="color:#ff5050">Damage Boost</b> — hit harder</li>
+    </ul>
+    <h3>Bots</h3>
+    <p>No one else online? The lobby host can add AI bots to fill the arena — click <b>+ Bot</b> before starting.</p>
+    <h3>Kill Streaks</h3>
+    <p>Chain kills without dying for bonus points and an on-screen callout — Double Kill, Triple Kill, Rampage, Unstoppable, Godlike.</p>
+    <h3>Armory</h3>
+    <p>Winning a round earns Credits. Spend them in the <b>🛒 Armory</b> from the main menu on new weapons (Rapid Fire, Shotgun, Railgun) and permanent character upgrades (Vitality, Agility, Reflexes, Brawler). Your loadout carries into every match you join.</p>
+    <button class="btn btn-primary full modal-close">Got it</button>
+  </div>
+</div>
+
+<div id="modal-settings" class="modal-overlay hidden">
+  <div class="modal-box">
+    <h2>Settings</h2>
+    <div class="field-row">
+      <label for="setting-volume">Master Volume</label>
+      <input id="setting-volume" type="range" min="0" max="100" value="70">
+    </div>
+    <div class="field-row checkbox-row">
+      <label for="setting-sfx">Sound Effects</label>
+      <input id="setting-sfx" type="checkbox" checked>
+    </div>
+    <div class="field-row checkbox-row">
+      <label for="setting-shake">Screen Shake</label>
+      <input id="setting-shake" type="checkbox" checked>
+    </div>
+    <div class="field-row checkbox-row">
+      <label for="setting-music">Ambient Music</label>
+      <input id="setting-music" type="checkbox" checked>
+    </div>
+    <button class="btn btn-primary full modal-close">Save</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="shared/constants.js"></script>
+<script src="audio.js"></script>
+<script src="network.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
