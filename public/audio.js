@@ -141,6 +141,11 @@ class AudioManager {
     this._playTone({ freq: 220, endFreq: 90, type: 'square', duration: 0.08, gain: 0.14 });
   }
 
+  explosion() {
+    this._playNoise({ duration: 0.4, gain: 0.45, filterFreq: 700 });
+    this._playTone({ freq: 110, endFreq: 35, type: 'sawtooth', duration: 0.35, gain: 0.3 });
+  }
+
   killstreak() {
     const notes = [660, 880, 1108.7];
     notes.forEach((f, i) => {

@@ -111,6 +111,7 @@ function createRoom(code, isPublic) {
     nextPowerupId: 1,
     nextBotId: 0,
     lastPowerupSpawn: 0,
+    firstBloodDone: false,
     state: 'lobby', // lobby | countdown | playing | ended
     countdownEndsAt: 0,
     roundEndsAt: 0,
@@ -232,6 +233,7 @@ function beginCountdown(room) {
   room.projectiles = [];
   room.powerups = [];
   room.roundNumber += 1;
+  room.firstBloodDone = false;
   for (const p of room.players.values()) {
     const spawn = randomSpawnPoint();
     p.x = spawn.x; p.y = spawn.y;
@@ -299,6 +301,10 @@ function killPlayer(room, victim, killer, now, events) {
     const bonus = Math.min(killer.streak, C.MAX_KILLSTREAK_TIER);
     killer.score += bonus;
     killer.kills += 1;
+    if (!room.firstBloodDone) {
+      room.firstBloodDone = true;
+      events.firstBlood.push({ killerId: killer.id, killerName: killer.name, victimName: victim.name });
+    }
     if (killer.streak >= 2) {
       const tier = Math.min(killer.streak, C.MAX_KILLSTREAK_TIER);
       events.killstreak.push({ playerId: killer.id, playerName: killer.name, streak: killer.streak, label: C.KILLSTREAK_LABELS[tier] });
@@ -325,6 +331,25 @@ function applyDamage(room, attacker, target, rawDamage, now, events, hitX, hitY)
 }
 
 /**
+ * Area splash damage for explosive weapons (currently the Grenade Launcher).
+ * Applied at the point a grenade projectile is consumed — whether that's a
+ * direct hit on `excludeId` (already given full direct damage separately,
+ * so it's skipped here to avoid double-counting) or a wall/range impact
+ * (excludeId is null, so everyone in range — including the shooter — can be
+ * caught by their own blast, same as most shooters' grenade launchers).
+ */
+function applyExplosion(room, attacker, x, y, splashRadius, splashDamage, excludeId, now, events) {
+  const rr = splashRadius * splashRadius;
+  for (const target of room.players.values()) {
+    if (!target.alive || target.id === excludeId) continue;
+    if (target.invulnUntil > now) continue;
+    if (dist2(x, y, target.x, target.y) > rr) continue;
+    applyDamage(room, attacker, target, splashDamage, now, events, target.x, target.y);
+  }
+  events.explosion.push({ x, y, radius: splashRadius });
+}
+
+/**
  * Very small bot "AI": chase the nearest living opponent while keeping a
  * preferred engagement distance (moving in to a comfortable attack range,
  * backing off if the target gets too close, strafing when at range), retreat
@@ -346,9 +371,27 @@ function updateBotAI(room, now, players) {
       if (d2 < bestD2) { bestD2 = d2; target = other; }
     }
 
+    // Notice nearby power-ups and go for them when it's not too risky —
+    // bots used to only ever chase players or wander, so pickups sat
+    // untouched whenever no human bothered grabbing them first.
+    let nearestPowerup = null;
+    let bestPuD2 = Infinity;
+    for (const pu of room.powerups) {
+      const d2 = dist2(bot.x, bot.y, pu.x, pu.y);
+      if (d2 < bestPuD2) { bestPuD2 = d2; nearestPowerup = pu; }
+    }
+    const targetDist = target ? Math.sqrt(bestD2) : Infinity;
+    const puDist = nearestPowerup ? Math.sqrt(bestPuD2) : Infinity;
+    const wantsPowerup = nearestPowerup && puDist < 260 && targetDist > 150;
+
     let moveX = 0, moveY = 0, angle = bot.angle, attack = false, melee = false;
 
-    if (target) {
+    if (wantsPowerup) {
+      const dx = (nearestPowerup.x - bot.x) / puDist, dy = (nearestPowerup.y - bot.y) / puDist;
+      moveX = dx; moveY = dy;
+      angle = target ? Math.atan2(target.y - bot.y, target.x - bot.x) : Math.atan2(dy, dx);
+      attack = target ? targetDist < C.PROJECTILE_RANGE * 0.85 : false;
+    } else if (target) {
       const dist = Math.sqrt(bestD2) || 1;
       const dx = (target.x - bot.x) / dist, dy = (target.y - bot.y) / dist;
       angle = Math.atan2(target.y - bot.y, target.x - bot.x);
@@ -385,7 +428,7 @@ function tickRoom(room) {
   const dt = Math.min((now - room.lastTick) / 1000, 0.1); // clamp to avoid huge steps after a stall
   room.lastTick = now;
 
-  const events = { hit: [], death: [], respawn: [], powerup: [], melee: [], killstreak: [] };
+  const events = { hit: [], death: [], respawn: [], powerup: [], melee: [], killstreak: [], firstBlood: [], explosion: [] };
 
   if (room.state === 'countdown' && now >= room.countdownEndsAt) {
     beginRound(room);
@@ -459,6 +502,9 @@ function simulatePlaying(room, now, dt, events) {
             range: weapon.range,
             traveled: 0,
             damage,
+            explosive: !!weapon.explosive,
+            splashRadius: weapon.splashRadius || 0,
+            splashDamage: weapon.splashDamage || 0,
           });
         }
       }
@@ -521,6 +567,10 @@ function simulatePlaying(room, now, dt, events) {
     proj.traveled += step;
 
     if (proj.traveled > proj.range || isBlocked(nx, ny, C.PROJECTILE_RADIUS)) {
+      if (proj.explosive) {
+        const attacker = room.players.get(proj.ownerId) || null;
+        applyExplosion(room, attacker, nx, ny, proj.splashRadius, proj.splashDamage, null, now, events);
+      }
       continue; // absorbed by wall/obstacle or exceeded range
     }
     proj.x = nx; proj.y = ny;
@@ -533,6 +583,9 @@ function simulatePlaying(room, now, dt, events) {
       if (dist2(proj.x, proj.y, target.x, target.y) <= rr) {
         const attacker = room.players.get(proj.ownerId) || null;
         applyDamage(room, attacker, target, proj.damage, now, events, proj.x, proj.y);
+        if (proj.explosive) {
+          applyExplosion(room, attacker, proj.x, proj.y, proj.splashRadius, proj.splashDamage, target.id, now, events);
+        }
         consumed = true;
         break;
       }
@@ -607,6 +660,8 @@ function broadcastState(room, now, events) {
   for (const e of events.powerup) io.to(room.code).emit('powerupCollected', e);
   for (const e of events.melee) io.to(room.code).emit('meleeEvent', e);
   for (const e of events.killstreak) io.to(room.code).emit('killstreakEvent', e);
+  for (const e of events.firstBlood) io.to(room.code).emit('firstBloodEvent', e);
+  for (const e of events.explosion) io.to(room.code).emit('explosionEvent', e);
 }
 
 // ----------------------------------------------------------------------------

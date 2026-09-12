@@ -17,7 +17,7 @@ const NET = (() => {
     const forwarded = [
       'roomJoined', 'joinError', 'lobbyUpdate', 'countdownStart', 'roundStart',
       'gameState', 'hitEvent', 'deathEvent', 'respawnEvent', 'powerupCollected',
-      'meleeEvent', 'killstreakEvent',
+      'meleeEvent', 'killstreakEvent', 'firstBloodEvent', 'explosionEvent',
       'roundEnded', 'connect', 'disconnect', 'connect_error',
     ];
     forwarded.forEach((evt) => {

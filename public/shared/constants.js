@@ -145,6 +145,13 @@
       color: '#ff5050', icon: '★',
       desc: 'Slow but hits like a truck at any range.',
     },
+    grenade: {
+      id: 'grenade', name: 'Grenade Launcher', cost: 550, order: 4,
+      damage: 22, cooldownMs: 1400, projectileSpeed: 460, range: 520, pellets: 1, spread: 0,
+      explosive: true, splashRadius: 95, splashDamage: 16,
+      color: '#3dff88', icon: '✹',
+      desc: 'Slow lob with area splash damage — punishes clustered enemies (and you, if you\'re too close).',
+    },
   };
   const DEFAULT_WEAPON_ID = 'blaster';
 

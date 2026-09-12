@@ -127,10 +127,11 @@ function renderArmory() {
     const card = document.createElement('div');
     card.className = 'weapon-card' + (equipped ? ' equipped' : '');
     const pelletsNote = w.pellets > 1 ? ` × ${w.pellets}` : '';
+    const splashNote = w.explosive ? ` · SPLASH ${w.splashDamage} (r${w.splashRadius})` : '';
     card.innerHTML = `
       <div class="weapon-card-icon" style="color:${w.color}">${w.icon}</div>
       <div class="weapon-card-name">${w.name}</div>
-      <div class="weapon-card-stats">DMG ${w.damage}${pelletsNote} · CD ${(w.cooldownMs / 1000).toFixed(2)}s · RNG ${w.range}</div>
+      <div class="weapon-card-stats">DMG ${w.damage}${pelletsNote} · CD ${(w.cooldownMs / 1000).toFixed(2)}s · RNG ${w.range}${splashNote}</div>
       <div class="weapon-card-desc">${w.desc}</div>
     `;
     const btn = document.createElement('button');
@@ -600,6 +601,7 @@ const renderPlayers = new Map(); // id -> { x,y,angle, targetX,targetY,targetAng
 let particles = [];
 let floatingTexts = [];
 let slashArcs = [];
+let explosions = [];
 const projectileTrails = new Map(); // projectile id -> previous {x,y}, for drawing motion trails
 let shakeMag = 0;
 let roundActive = false;
@@ -706,10 +708,28 @@ NET.on('killstreakEvent', (e) => {
   }
 });
 
+NET.on('firstBloodEvent', (e) => {
+  addKillFeed({ killerId: e.killerId, killerName: e.killerName, victimId: null, victimName: e.victimName, firstBlood: true });
+  if (e.killerId === myId) {
+    showAnnouncer('FIRST BLOOD');
+    AUDIO.killstreak();
+  }
+});
+
+NET.on('explosionEvent', (e) => {
+  explosions.push({ x: e.x, y: e.y, radius: e.radius, life: 0, maxLife: 0.4 });
+  spawnParticles(e.x, e.y, '#3dff88', 22, { speed: 220, life: 0.55, size: 4 });
+  const me = renderPlayers.get(myId);
+  if (me && Math.hypot(me.x - e.x, me.y - e.y) < e.radius + 150) {
+    triggerShake(7);
+  }
+  AUDIO.explosion();
+});
+
 NET.on('countdownStart', (data) => {
   showScreen('game');
   renderPlayers.clear();
-  particles = []; floatingTexts = []; slashArcs = []; shakeMag = 0;
+  particles = []; floatingTexts = []; slashArcs = []; explosions = []; shakeMag = 0;
   projectileTrails.clear();
   $('kill-feed').innerHTML = '';
   $('round-label').textContent = `Round ${data.roundNumber}`;
@@ -807,10 +827,15 @@ function showAnnouncer(text) {
 function addKillFeed(e) {
   const feed = $('kill-feed');
   const item = document.createElement('div');
-  item.className = 'kill-feed-item';
-  item.textContent = e.killerId
-    ? `${e.killerName} eliminated ${e.victimName}`
-    : `${e.victimName} was eliminated`;
+  item.className = 'kill-feed-item' + (e.firstBlood ? ' first-blood' : '');
+  const prefix = e.firstBlood ? '🩸 FIRST BLOOD: ' : '';
+  if (e.killerId && e.victimId && e.killerId === e.victimId) {
+    item.textContent = `${prefix}${e.killerName} blew themselves up`;
+  } else if (e.killerId) {
+    item.textContent = `${prefix}${e.killerName} eliminated ${e.victimName}`;
+  } else {
+    item.textContent = `${prefix}${e.victimName} was eliminated`;
+  }
   feed.appendChild(item);
   setTimeout(() => item.remove(), 4700);
   while (feed.children.length > 5) feed.removeChild(feed.firstChild);
@@ -923,6 +948,10 @@ function updateEffects(dt) {
   slashArcs = slashArcs.filter((s) => {
     s.life += dt;
     return s.life < s.maxLife;
+  });
+  explosions = explosions.filter((ex) => {
+    ex.life += dt;
+    return ex.life < ex.maxLife;
   });
   shakeMag *= Math.max(0, 1 - dt * 6);
   if (shakeMag < 0.05) shakeMag = 0;
@@ -1063,6 +1092,25 @@ function drawSlashArcs() {
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(s.x, s.y, C.MELEE_RANGE * 0.8, s.angle - C.MELEE_ARC / 2, s.angle + C.MELEE_ARC / 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawExplosions() {
+  ctx.save();
+  ctx.translate(camera.offsetX, camera.offsetY);
+  ctx.scale(camera.scale, camera.scale);
+  for (const ex of explosions) {
+    const t = ex.life / ex.maxLife;
+    const alpha = 1 - t;
+    const r = ex.radius * (0.3 + t * 0.9);
+    ctx.globalAlpha = Math.max(alpha, 0) * 0.8;
+    ctx.strokeStyle = '#3dff88';
+    ctx.lineWidth = 5 * (1 - t) + 1;
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, r, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -1246,6 +1294,7 @@ function renderFrame(now) {
     drawProjectiles();
     drawPlayers(now);
     drawSlashArcs();
+    drawExplosions();
     drawAimGuide();
     drawParticlesAndText();
     ctx.restore();

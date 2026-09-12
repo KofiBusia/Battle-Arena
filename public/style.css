@@ -743,6 +743,12 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--neon-cya
   font-size: 0.78rem;
   animation: feedIn 0.25s ease, feedOut 0.4s ease 4.2s forwards;
 }
+.kill-feed-item.first-blood {
+  border-left-color: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(255,77,77,0.3);
+}
 @keyframes feedIn { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes feedOut { to { opacity: 0; transform: translateX(-14px); } }
 
