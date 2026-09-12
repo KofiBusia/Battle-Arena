@@ -386,6 +386,31 @@ NET.on('joinError', (data) => { $('mp-error').textContent = data.message; showTo
 NET.on('lobbyUpdate', renderLobby);
 
 // ----------------------------------------------------------------------------
+// Connection resilience — a dropped socket (mobile network hiccup, server
+// restart, etc.) is common enough to design for explicitly rather than
+// leaving the player staring at a frozen screen with no explanation.
+// Socket.IO's client retries automatically; we just need to reflect that
+// state and, once actually reconnected, restart cleanly at the main menu
+// (the old room/player no longer exists server-side under the new socket id).
+// ----------------------------------------------------------------------------
+let hasConnectedOnce = false;
+NET.on('connect', () => {
+  $('connection-overlay').classList.add('hidden');
+  if (hasConnectedOnce) {
+    myId = null;
+    roomCode = null;
+    latestState = null;
+    renderPlayers.clear();
+    showToast('Reconnected — rejoin to keep playing', 3200);
+    showScreen('menu');
+  }
+  hasConnectedOnce = true;
+});
+NET.on('disconnect', () => {
+  $('connection-overlay').classList.remove('hidden');
+});
+
+// ----------------------------------------------------------------------------
 // Canvas / camera
 // ----------------------------------------------------------------------------
 const canvas = $('gameCanvas');
@@ -574,6 +599,8 @@ let latestState = null;
 const renderPlayers = new Map(); // id -> { x,y,angle, targetX,targetY,targetAngle, ...meta }
 let particles = [];
 let floatingTexts = [];
+let slashArcs = [];
+const projectileTrails = new Map(); // projectile id -> previous {x,y}, for drawing motion trails
 let shakeMag = 0;
 let roundActive = false;
 let countdownInterval = null;
@@ -662,6 +689,13 @@ NET.on('powerupCollected', (e) => {
 
 NET.on('meleeEvent', (e) => {
   spawnParticles(e.x, e.y, '#ffd93d', e.hit ? 6 : 3, { speed: 90, life: 0.25, size: 2.5 });
+  const attacker = renderPlayers.get(e.playerId);
+  if (attacker) {
+    slashArcs.push({
+      x: attacker.x, y: attacker.y, angle: attacker.angle,
+      color: attacker.color, hit: e.hit, life: 0, maxLife: 0.18,
+    });
+  }
   if (e.playerId === myId) AUDIO.meleeSwing();
 });
 
@@ -675,7 +709,8 @@ NET.on('killstreakEvent', (e) => {
 NET.on('countdownStart', (data) => {
   showScreen('game');
   renderPlayers.clear();
-  particles = []; floatingTexts = []; shakeMag = 0;
+  particles = []; floatingTexts = []; slashArcs = []; shakeMag = 0;
+  projectileTrails.clear();
   $('kill-feed').innerHTML = '';
   $('round-label').textContent = `Round ${data.roundNumber}`;
   $('countdown-round').textContent = data.roundNumber;
@@ -885,6 +920,10 @@ function updateEffects(dt) {
     t.vy *= 0.96;
     return t.life < t.maxLife;
   });
+  slashArcs = slashArcs.filter((s) => {
+    s.life += dt;
+    return s.life < s.maxLife;
+  });
   shakeMag *= Math.max(0, 1 - dt * 6);
   if (shakeMag < 0.05) shakeMag = 0;
 }
@@ -977,9 +1016,26 @@ function drawProjectiles() {
   ctx.save();
   ctx.translate(camera.offsetX, camera.offsetY);
   ctx.scale(camera.scale, camera.scale);
+
+  const seenIds = new Set();
   for (const proj of latestState.projectiles) {
+    seenIds.add(proj.id);
     const owner = renderPlayers.get(proj.ownerId);
     const color = owner ? owner.color : '#3ef2ff';
+
+    const prev = projectileTrails.get(proj.id);
+    if (prev) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = C.PROJECTILE_RADIUS;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(proj.x, proj.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    projectileTrails.set(proj.id, { x: proj.x, y: proj.y });
+
     ctx.save();
     ctx.translate(proj.x, proj.y);
     ctx.shadowColor = color;
@@ -988,6 +1044,28 @@ function drawProjectiles() {
     ctx.beginPath(); ctx.arc(0, 0, C.PROJECTILE_RADIUS, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+  // Drop trail memory for projectiles that no longer exist (hit something / expired).
+  for (const id of Array.from(projectileTrails.keys())) {
+    if (!seenIds.has(id)) projectileTrails.delete(id);
+  }
+
+  ctx.restore();
+}
+
+function drawSlashArcs() {
+  ctx.save();
+  ctx.translate(camera.offsetX, camera.offsetY);
+  ctx.scale(camera.scale, camera.scale);
+  for (const s of slashArcs) {
+    const alpha = 1 - s.life / s.maxLife;
+    ctx.globalAlpha = Math.max(alpha, 0) * 0.8;
+    ctx.strokeStyle = s.hit ? '#ffffff' : s.color;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, C.MELEE_RANGE * 0.8, s.angle - C.MELEE_ARC / 2, s.angle + C.MELEE_ARC / 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -1167,6 +1245,7 @@ function renderFrame(now) {
     drawPowerups(now);
     drawProjectiles();
     drawPlayers(now);
+    drawSlashArcs();
     drawAimGuide();
     drawParticlesAndText();
     ctx.restore();

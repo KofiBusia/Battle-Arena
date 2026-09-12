@@ -907,6 +907,35 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--neon-cya
 }
 .toast.hidden { opacity: 0; transform: translate(-50%, 10px); pointer-events: none; }
 
+.connection-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(2,4,9,0.88);
+  backdrop-filter: blur(3px);
+  color: var(--text);
+}
+.connection-overlay.hidden { display: none; }
+.connection-spinner {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 4px solid rgba(62,242,255,0.2);
+  border-top-color: var(--neon-cyan);
+  animation: connSpin 0.8s linear infinite;
+}
+@keyframes connSpin { to { transform: rotate(360deg); } }
+.connection-overlay-text {
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+
 /* ---------------------------------------------------------------------------
    Responsive
    --------------------------------------------------------------------------- */
